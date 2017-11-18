@@ -25,6 +25,7 @@ class Master:
 		self.logger = Logger('./logs/' + self.host)
 
 	def init(self):
+		self.logger.info(self.host + ' is restarted.')
 		self.heartbeat()
 
 	def notified(self, worker, taskid, status):
@@ -33,22 +34,16 @@ class Master:
 			self.handle_task_failure_)(worker, taskid)
 
 	def do_schedule(self):
-		task = None
 		while True:
-			if not task:
-				task = self.get_task_()
-			if task and self.handle_assign_(task):
-				task = None
-			self.logger.debug('time: ' + str(time()))
+			self.try_assign_()
 			if time() - self.last_heartbeat_time > self.heartbeat_period:
 				self.heartbeat()
 
 	def heartbeat(self):
 		self.last_heartbeat_time = time()
 		for worker_host in self.worker_hosts:
-			self.logger.debug('sending ping to ' + worker_host)
 			conn = Conn(worker_host, self.port)
-			status = conn.send('/ping')
+			status = conn.send('/ping?' + self.host)
 			if status == 200:
 				self.handle_worker_up_(worker_host)
 			else:
@@ -63,16 +58,21 @@ class Master:
 				self.sem_avail_workers.release()
 
 	def handle_worker_down_(self, worker):
-		self.logger.info(worker + ' is down.')
 		with self.lock:
 			if worker in self.avail_workers:
+				self.logger.info(worker + ' is unavailable.')
 				self.avail_workers.remove(worker)
 				self.sem_avail_workers.acquire()
-			else:
+			elif self.current_tasks.find_one({'worker': worker}):
+				self.logger.info(worker + ' is down.')
 				self.handle_task_failure_(worker)
 
-	def handle_assign_(self, task):
-		if self.sem_avail_workers.acquire(timeout=self.heartbeat_period): # still blocking????
+	def try_assign_(self):
+		if self.sem_avail_workers.acquire(timeout=self.heartbeat_period):
+			task = self.get_task_()
+			if not task:
+				self.sem_avail_workers.release()
+				return False
 			with self.lock:
 				worker = choice(tuple(self.avail_workers))
 				self.avail_workers.remove(worker)
@@ -84,10 +84,8 @@ class Master:
 			}).inserted_id
 			conn = Conn(worker, self.port)
 			status = conn.send('/doTask?' + str(task) + '&&from=master&&port=' + str(self.port))
-			self.logger.debug(str(status))
 			if status == 200:
 				return True
-			self.current_tasks.delete_one({'_id': entry_id})
 			self.handle_worker_down_(worker)
 		return False
 
@@ -95,7 +93,7 @@ class Master:
 		with self.lock:
 			for task in self.current_tasks.find({'worker': worker}):
 				if taskid is None or task['taskid'] == taskid:
-					self.logger.info(task['taskid'] + ' failed by ' + worker)
+					self.logger.info('Task ' + task['taskid'] + ' failure by ' + worker)
 					self.put_task_(Task(task['taskid'], task['sleep_time']))
 					self.current_tasks.delete_one({'_id': ObjectId(task['_id'])})
 
@@ -103,7 +101,7 @@ class Master:
 		with self.lock:
 			for task in self.current_tasks.find({'worker': worker}):
 				if task['taskid'] == taskid:
-					self.logger.info(task['taskid'] + ' success by ' + worker)
+					self.logger.info('Task ' + task['taskid'] + ' success by ' + worker)
 					self.current_tasks.delete_one({'_id': ObjectId(task['_id'])})
 					self.avail_workers.add(worker)
 					self.sem_avail_workers.release()
@@ -112,9 +110,11 @@ class Master:
 	def get_task_(self):
 		conn = Conn(self.taskpool_host, self.port)
 		status, data = conn.send_recv('/get')
+		if status != 200 or not data:
+			return None
 		qs = parse_qs(data)
 		self.logger.debug('getting task: ' + str(qs))
-		return Task(qs['taskid'][0], qs['sleep_time'][0]) if status == 200 else None
+		return Task(qs['taskid'][0], qs['sleep_time'][0])
 
 	def put_task_(self, task):
 		conn = Conn(self.taskpool_host, self.port)

@@ -1,5 +1,5 @@
 from flask import Flask, request
-from common import Task, Conn, get_db, FLASK_PORT, Logger, Status
+from common import Task, Conn, get_db, FLASK_PORT, Status
 from time import sleep
 from sys import argv
 from bson.objectid import ObjectId
@@ -10,34 +10,39 @@ class Worker:
 	def __init__(self, hostname):
 		self.hostname = hostname
 		self.msg_queue = get_db()[self.hostname]
-		self.logger = Logger('./logs/' + self.hostname)
 	
-	def init(self):
+	def recover(self):
+		self.msg_queue.update(
+			{'status': Status.ON_GOING}, 
+			{"$set": {'status': Status.FAILURE}}
+		)
 		self.notify()
 
 	def do_task(self, task, master_host, master_port):
-		self.logger.debug(self.hostname + ' received ' + str(task))
 		entry_id = self.msg_queue.insert_one({
 			'taskid': task.taskid,
 			'sleep_time': task.sleep_time,
 			'master_host': master_host,
 			'master_port': master_port,
-			'status': Status.FAILED
+			'status': Status.ON_GOING
 		}).inserted_id
 		sleep(int(task.sleep_time))
 		self.msg_queue.find_and_modify(
 			query={'_id': entry_id}, 
 			update={"$set": {'status': Status.SUCCESS}}
 		)
+		self.notify(master_host)
 
 	def notify(self, master_host=None):
 		for task in self.msg_queue.find(sort=[('_id',1)]):
-			if not master_host or task['master_host'] == master_host:
+			if ((not master_host or task['master_host'] == master_host) 
+				and task['status'] != Status.ON_GOING):
 				conn = Conn(task['master_host'], int(task['master_port']))
-				conn.send('/notify?' + 
+				status = conn.send('/notify?' + 
 					str(Task(task['taskid'], task['sleep_time'])) +
 					'&&status=' + task['status'] + '&&worker=' + self.hostname)
-				self.msg_queue.delete_one({'_id': ObjectId(task['_id'])})
+				if status == 200:
+					self.msg_queue.delete_one({'_id': ObjectId(task['_id'])})
 
 worker = Worker(argv[1]) # prompt
 
@@ -58,5 +63,5 @@ def ping():
 	return 'OK'
 
 if __name__ == '__main__':
-	worker.init()
+	worker.recover()
 	app.run(host=worker.hostname, port=FLASK_PORT, threaded=True)

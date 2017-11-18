@@ -7,6 +7,7 @@ import datetime
 FLASK_PORT = 5000
 
 NODE_IS_DOWN = 521
+OK = 200
 
 class Task:
 	def __init__(self, taskid, sleep_time):
@@ -18,7 +19,8 @@ class Task:
 
 class Status:
 	SUCCESS = 'success'
-	FAILED = 'failed'
+	FAILURE = 'failure'
+	ON_GOING = 'on_going'
 
 class Conn:
 	def __init__(self, host='127.0.0.1', port=FLASK_PORT, timeout=10):
@@ -33,11 +35,9 @@ class Conn:
 			return NODE_IS_DOWN, "Node is down"
 
 	def send(self, uri):
-		self.conn.request('GET', uri)
-		return self.conn.getresponse().status
 		try:
 			self.conn.request('GET', uri)
-			return self.conn.getresponse().status
+			return OK
 		except:
 			return NODE_IS_DOWN
 
@@ -58,8 +58,9 @@ class Logger:
 
 	def info(self, msg):
 		line = "[{}][{}]{}".format(self.time_stamp_(), "INFO", msg)
+		self.file.write(line + '\n')
+		self.file.flush()
 		print(line)
-		self.file.write(line)
 
 	def time_stamp_(self):
 		return datetime.datetime.fromtimestamp(time.time()).strftime('%H:%M:%S')

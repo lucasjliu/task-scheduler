@@ -24,8 +24,11 @@ if __name__ == '__main__':
 
 	sleep(1)
 
+	# A simple test for IPC via Flask http serving
 	conn = Conn(host='127.0.0.1', port=5000, timeout=2)
-	print(conn.send_recv('/echo?val=hello'))
-	print(conn.send('/echo?val=hello'))
+	status, data = conn.send_recv('/echo?val=hello')
+	assert status == 200 and data == 'hello'
+	status = conn.send('/echo?val=hello')
+	assert status == 200
 
 	t.join()
