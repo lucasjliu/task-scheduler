@@ -1,0 +1,127 @@
+[22:59:48][INFO]master is restarted.
+[23:00:04][INFO]worker1 is up.
+[23:00:04][INFO]worker2 is up.
+[23:00:04][INFO]worker3 is up.
+[23:00:08][INFO]Task 1 success by worker3
+[23:00:09][INFO]Task 3 success by worker3
+[23:00:10][INFO]Task 2 success by worker2
+[23:00:10][INFO]Task 0 success by worker1
+[23:00:12][INFO]Task 6 success by worker1
+[23:00:12][INFO]Task 4 success by worker3
+[23:00:13][INFO]Task 8 success by worker3
+[23:00:14][INFO]Task 5 success by worker2
+[23:00:14][INFO]Task 7 success by worker1
+[23:00:15][INFO]Task 10 success by worker2
+[23:00:20][INFO]worker1 is down.
+[23:00:20][INFO]Task 11 failure by worker1
+[23:00:20][INFO]worker2 is down.
+[23:00:20][INFO]Task 12 failure by worker2
+[23:00:20][INFO]worker3 is down.
+[23:00:20][INFO]Task 9 failure by worker3
+[23:00:30][INFO]worker2 is up.
+[23:00:30][INFO]worker3 is up.
+[23:00:32][INFO]Task 14 success by worker3
+[23:00:34][INFO]Task 13 success by worker2
+[23:00:36][INFO]Task 15 success by worker3
+[23:00:36][INFO]Task 16 success by worker2
+[23:00:36][INFO]worker1 is up.
+[23:00:37][INFO]Task 19 success by worker1
+[23:00:38][INFO]Task 18 success by worker2
+[23:00:39][INFO]Task 17 success by worker3
+[23:00:41][INFO]Task 21 success by worker2
+[23:00:41][INFO]Task 20 success by worker1
+[23:00:42][INFO]Task 24 success by worker1
+[23:00:43][INFO]Task 23 success by worker2
+[23:00:44][INFO]Task 22 success by worker3
+[23:00:46][INFO]Task 27 success by worker3
+[23:00:46][INFO]Task 26 success by worker2
+[23:00:47][INFO]Task 25 success by worker1
+[23:00:48][INFO]Task 28 success by worker3
+[23:02:13][INFO]master is restarted.
+[23:02:13][INFO]Task 30 success by worker1
+[23:02:14][INFO]Task 29 success by worker2
+[23:02:14][INFO]Task 31 success by worker3
+[23:02:17][INFO]Task 33 success by worker2
+[23:02:18][INFO]Task 32 success by worker1
+[23:02:18][INFO]Task 34 success by worker3
+[23:02:19][INFO]Task 35 success by worker2
+[23:02:20][INFO]Task 38 success by worker2
+[23:02:22][INFO]Task 36 success by worker1
+[23:02:22][INFO]Task 37 success by worker3
+[23:02:24][INFO]Task 40 success by worker1
+[23:02:25][INFO]Task 39 success by worker2
+[23:02:25][INFO]Task 41 success by worker3
+[23:02:26][INFO]Task 44 success by worker3
+[23:02:43][INFO]master is restarted.
+[23:02:43][INFO]Task 42 success by worker1
+[23:02:43][INFO]worker2 is down.
+[23:02:43][INFO]Task 43 failure by worker2
+[23:02:43][INFO]worker3 is down.
+[23:02:43][INFO]Task 45 failure by worker3
+[23:02:48][INFO]Task 46 success by worker1
+[23:02:53][INFO]Task 47 success by worker1
+[23:02:54][INFO]Task 48 success by worker1
+[23:02:56][INFO]Task 49 success by worker1
+[23:02:57][INFO]Task 50 success by worker1
+[23:03:01][INFO]Task 51 success by worker1
+[23:03:01][INFO]worker2 is up.
+[23:03:02][INFO]Task 52 success by worker1
+[23:03:03][INFO]Task 54 success by worker1
+[23:03:03][INFO]Task 53 success by worker2
+[23:03:04][INFO]Task 56 success by worker2
+[23:03:05][INFO]Task 55 success by worker1
+[23:03:06][INFO]Task 58 success by worker1
+[23:03:07][INFO]Task 57 success by worker2
+[23:03:08][INFO]Task 59 success by worker1
+[23:03:10][INFO]Task 61 success by worker1
+[23:03:11][INFO]Task 62 success by worker1
+[23:03:12][INFO]Task 60 success by worker2
+[23:03:14][INFO]Task 63 success by worker1
+[23:03:15][INFO]Task 64 success by worker2
+[23:03:15][INFO]Task 65 success by worker1
+[23:03:17][INFO]Task 67 success by worker1
+[23:03:18][INFO]Task 68 success by worker1
+[23:03:19][INFO]Task 66 success by worker2
+[23:03:19][INFO]Task 69 success by worker1
+[23:03:21][INFO]Task 70 success by worker2
+[23:03:23][INFO]Task 71 success by worker1
+[23:03:24][INFO]worker2 is down.
+[23:03:24][INFO]Task 72 failure by worker2
+[23:03:25][INFO]Task 73 success by worker1
+[23:03:29][INFO]Task 74 success by worker1
+[23:03:30][INFO]Task 75 success by worker1
+[23:03:43][INFO]master is restarted.
+[23:03:43][INFO]worker1 is up.
+[23:03:43][INFO]worker2 is up.
+[23:03:45][INFO]Task 77 success by worker1
+[23:03:48][INFO]Task 76 success by worker2
+[23:03:50][INFO]Task 78 success by worker1
+[23:03:52][INFO]Task 79 success by worker2
+[23:03:53][INFO]Task 80 success by worker1
+[23:03:53][INFO]Task 81 success by worker2
+[23:03:56][INFO]Task 82 success by worker1
+[23:03:57][INFO]Task 84 success by worker1
+[23:03:58][INFO]Task 83 success by worker2
+[23:04:00][INFO]Task 86 success by worker2
+[23:04:02][INFO]Task 85 success by worker1
+[23:04:02][INFO]Task 87 success by worker2
+[23:04:03][INFO]Task 89 success by worker2
+[23:04:04][INFO]Task 88 success by worker1
+[23:04:05][INFO]Task 90 success by worker2
+[23:04:09][INFO]Task 92 success by worker2
+[23:04:09][INFO]Task 91 success by worker1
+[23:04:12][INFO]Task 93 success by worker2
+[23:04:13][INFO]Task 94 success by worker1
+[23:04:16][INFO]Task 96 success by worker1
+[23:04:16][INFO]Task 95 success by worker2
+[23:04:20][INFO]Task 97 success by worker1
+[23:04:20][INFO]Task 98 success by worker2
+[23:04:22][INFO]Task 99 success by worker1
+[23:04:24][INFO]Task 11 success by worker2
+[23:04:26][INFO]Task 12 success by worker1
+[23:04:29][INFO]Task 45 success by worker1
+[23:04:29][INFO]Task 43 success by worker2
+[23:04:32][INFO]Task 72 success by worker1
+[23:04:33][INFO]Task 9 success by worker2
+[23:37:31][INFO]worker1 is unavailable.
+[23:37:32][INFO]worker2 is unavailable.

@@ -1,0 +1,24 @@
+[22:37:36][INFO]master is up.
+[22:37:47][INFO]worker1 is up.
+[22:37:52][INFO]worker2 is up.
+[22:37:52][INFO]Task 0 success by worker1
+[22:37:55][INFO]Task 1 success by worker1
+[22:37:55][INFO]Task 2 success by worker2
+[22:37:58][INFO]Task 3 success by worker1
+[22:38:12][INFO]master is up.
+[22:38:12][INFO]worker1 is down.
+[22:38:12][INFO]Task 5 failure by worker1
+[22:38:12][INFO]Task 4 success by worker2
+[22:38:13][INFO]Task 6 success by worker2
+[22:38:14][INFO]Task 7 success by worker2
+[22:38:15][INFO]Task 8 success by worker2
+[22:38:17][INFO]Task 9 success by worker2
+[22:38:17][INFO]worker1 is up.
+[22:43:39][INFO]master is up.
+[22:43:39][INFO]worker1 is up.
+[22:43:40][INFO]Task 5 success by worker2
+[22:44:36][INFO]master is up.
+[22:44:36][INFO]worker1 is up.
+[22:44:37][INFO]worker2 is up.
+[22:45:37][INFO]worker1 is unavailable.
+[22:45:37][INFO]worker2 is unavailable.
