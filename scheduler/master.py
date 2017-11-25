@@ -3,8 +3,9 @@ from common import Task, Conn, get_db, FLASK_PORT, Logger, Status
 from threading import Thread, RLock, Semaphore
 from random import choice
 from urllib.parse import parse_qs
-from time import time
+from time import time, sleep
 from bson.objectid import ObjectId
+from sys import argv, exit
 
 app = Flask(__name__)
 
@@ -17,111 +18,125 @@ class Master:
 		self.heartbeat_period = 5 # second
 		self.last_heartbeat_time = time()
 
+		# maintain current_tasks to make sure each task can only be ended (success/failure) once
+		# because we have two ways to determine a failure: detected by master and worker it self
+		# following three structures should be consistent, so always bind them with a lock
 		self.current_tasks = get_db()[self.host]
 		self.avail_workers = set()
-		self.lock = RLock()
 		self.sem_avail_workers = Semaphore(0)
+		self.worker_lock = RLock()
+		# number of available (up but not working) workers
 
-		self.logger = Logger('./logs/' + self.host)
+		self.logger = Logger.create(self.host)
 
 	def init(self):
-		self.logger.info(self.host + ' is restarted.')
+		self.logger.info('master ' + self.host +  ' is restarted.')
+		# upon each restart, ping each worker and get notified the existing results 
+		# before start listening, therefore no race condition on these results
 		self.heartbeat()
-
-	def notified(self, worker, taskid, status):
-		self.logger.debug(status + ' notification from ' + worker + ': ' + taskid)
-		(self.handle_task_success_ if status == Status.SUCCESS else 
-			self.handle_task_failure_)(worker, taskid)
 
 	def do_schedule(self):
 		while True:
-			self.try_assign_()
+			self.try_assign() # try to get a task and assign to random available worker
 			if time() - self.last_heartbeat_time > self.heartbeat_period:
 				self.heartbeat()
 
 	def heartbeat(self):
 		self.last_heartbeat_time = time()
 		for worker_host in self.worker_hosts:
-			conn = Conn(worker_host, self.port)
-			status = conn.send('/ping?' + self.host)
+			status = Conn(worker_host, self.port).send('/ping', {'from': self.host})
 			if status == 200:
 				self.handle_worker_up_(worker_host)
 			else:
 				self.handle_worker_down_(worker_host)
 
 	def handle_worker_up_(self, worker):
-		with self.lock:
+		with self.worker_lock:
+			# an 'down' worker is neither working nor available
 			if (worker not in self.avail_workers and 
-				self.current_tasks.find_one({'worker': worker}) is None):
+				not self.current_tasks.find_one({'worker': worker})):
 				self.logger.info(worker + ' is up.')
 				self.avail_workers.add(worker)
 				self.sem_avail_workers.release()
 
 	def handle_worker_down_(self, worker):
-		with self.lock:
+		with self.worker_lock:
+			# an 'up' worker can be either working or available (not working)
 			if worker in self.avail_workers:
 				self.logger.info(worker + ' is unavailable.')
 				self.avail_workers.remove(worker)
-				self.sem_avail_workers.acquire()
+				self.sem_avail_workers.acquire() # should not block
 			elif self.current_tasks.find_one({'worker': worker}):
 				self.logger.info(worker + ' is down.')
+				# a working worker is down, so restart all its tasks
 				self.handle_task_failure_(worker)
 
-	def try_assign_(self):
-		if self.sem_avail_workers.acquire(timeout=self.heartbeat_period):
-			task = self.get_task_()
-			if not task:
-				self.sem_avail_workers.release()
-				return False
-			with self.lock:
-				worker = choice(tuple(self.avail_workers))
+	def try_assign(self):
+		if self.worker_lock.acquire(blocking=False):
+			if self.sem_avail_workers.acquire(timeout=self.heartbeat_period):
+				task = self.get_task_()
+				if not task:
+					# no more tasks
+					self.sem_avail_workers.release()
+					self.worker_lock.release()
+					return False
+				worker = choice(tuple(self.avail_workers)) # simple load balancing
 				self.avail_workers.remove(worker)
-			self.logger.debug('Trying to assign ' + str(task) + ' to ' + worker)
-			entry_id = self.current_tasks.insert_one({
-				'worker': worker,
-				'taskid': task.taskid,
-				'sleep_time': task.sleep_time
-			}).inserted_id
-			conn = Conn(worker, self.port)
-			status = conn.send('/doTask?' + str(task) + '&&from=master&&port=' + str(self.port))
-			if status == 200:
-				return True
-			self.handle_worker_down_(worker)
+				entry_id = self.current_tasks.insert_one({
+					'worker': worker,
+					'taskid': task.taskid,
+					'sleep_time': task.sleep_time
+				}).inserted_id
+				self.worker_lock.release()
+				params = task.__dict__.copy()
+				params.update({'from': self.host, 'port':self.port})
+				status = Conn(worker, self.port).send('/doTask', params)
+				if status == 200:
+					self.handle_task_assigned_(worker, task.taskid)
+					return True
+				self.handle_worker_down_(worker)
+			else:
+				self.worker_lock.release()
 		return False
 
-	def handle_task_failure_(self, worker, taskid=None):
-		with self.lock:
-			for task in self.current_tasks.find({'worker': worker}):
-				if taskid is None or task['taskid'] == taskid:
-					self.logger.info('Task ' + task['taskid'] + ' failure by ' + worker)
-					self.put_task_(Task(task['taskid'], task['sleep_time']))
-					self.current_tasks.delete_one({'_id': ObjectId(task['_id'])})
-
-	def handle_task_success_(self, worker, taskid):
-		with self.lock:
-			for task in self.current_tasks.find({'worker': worker}):
-				if task['taskid'] == taskid:
-					self.logger.info('Task ' + task['taskid'] + ' success by ' + worker)
-					self.current_tasks.delete_one({'_id': ObjectId(task['_id'])})
-					self.avail_workers.add(worker)
-					self.sem_avail_workers.release()
-					break
-
 	def get_task_(self):
-		conn = Conn(self.taskpool_host, self.port)
-		status, data = conn.send_recv('/get')
+		status, data = Conn(self.taskpool_host, self.port).send_recv('/get')
 		if status != 200 or not data:
 			return None
 		qs = parse_qs(data)
 		self.logger.debug('getting task: ' + str(qs))
 		return Task(qs['taskid'][0], qs['sleep_time'][0])
 
-	def put_task_(self, task):
-		conn = Conn(self.taskpool_host, self.port)
-		self.logger.debug('putting task: ' + str(task.taskid))
-		return conn.send('/put?' + str(task))
+	def handle_task_assigned_(self, worker, taskid):
+		self.logger.debug('Task ' + str(taskid) + ' assigned to ' + worker)
+		Conn(self.taskpool_host, self.port).send('/update', 
+			{'taskid': taskid, 'status': Status.RUNNING})
 
-master = Master('master', FLASK_PORT, ['worker1', 'worker2', 'worker3'], 'taskpool')
+	def notified(self, worker, taskid, status):
+		with self.worker_lock:
+			(self.handle_task_success_ if status == Status.SUCCESS else 
+				self.handle_task_failure_)(worker, taskid)
+
+	def handle_task_failure_(self, worker, taskid=None):
+		for task in self.current_tasks.find({'worker': worker}):
+			if taskid is None or task['taskid'] == taskid:
+				self.logger.info('Task ' + task['taskid'] + ' failure by ' + worker)
+				Conn(self.taskpool_host, self.port).send('/update', 
+					{'taskid': task['taskid'], 'status': Status.FAILURE})
+				self.current_tasks.delete_one({'_id': ObjectId(task['_id'])})
+
+	def handle_task_success_(self, worker, taskid):
+		for task in self.current_tasks.find({'worker': worker}):
+			if task['taskid'] == taskid:
+				self.logger.info('Task ' + task['taskid'] + ' success by ' + worker)
+				Conn(self.taskpool_host, self.port).send('/update', 
+					{'taskid': task['taskid'], 'status': Status.SUCCESS})
+				self.current_tasks.delete_one({'_id': ObjectId(task['_id'])})
+				self.avail_workers.add(worker)
+				self.sem_avail_workers.release()
+				break
+
+master = None
 
 @app.route('/notify', methods=['GET'])
 def notify():
@@ -129,14 +144,20 @@ def notify():
 	taskid = request.args.get('taskid', None)
 	status = request.args.get('status', None)
 	if worker and taskid and status:
-		master.notified(worker, taskid, status)
+		master.notified(worker, taskid, status) # blocking
 	return 'OK'
 
+# /register
+
 if __name__ == '__main__':
+	if (len(argv) < 2):
+		print('input should specify at least a worker')
+		exit(1)
 	t = Thread(
-		target=lambda: app.run(host=master.host, port=FLASK_PORT, threaded=True), 
+		target=lambda: app.run(host='master', port=FLASK_PORT, threaded=True), 
 		daemon=True)
 	t.start()
+	master = Master('master', FLASK_PORT, argv[1:], 'taskpool')
 	master.init()
 	master.do_schedule()
 	t.join()
