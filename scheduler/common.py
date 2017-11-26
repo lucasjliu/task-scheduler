@@ -25,7 +25,7 @@ class Status:
 
 class Conn:
 	def __init__(self, host='127.0.0.1' + str(FLASK_PORT), port=None, timeout=10):
-		self.conn = HTTPConnection(host, int(port), timeout)
+		self.conn = HTTPConnection(host, port, timeout)
 
 	def send_recv(self, uri, params={}, recv_size=8*128):
 		try:

@@ -7,9 +7,9 @@ from pymongo import IndexModel, ASCENDING
 app = Flask(__name__)
 
 class Taskpool:
-	def __init__(self, hostname):
-		self.hostname = hostname
-		self.tasks = get_db()[self.hostname]
+	def __init__(self, host):
+		self.host = host
+		self.tasks = get_db()[self.host]
 		self.tasks.create_index([('taskid', ASCENDING)])
 		self.tasks.remove() # erase history tasks
 		self.lock = Lock()
@@ -52,8 +52,8 @@ def getTask():
 
 @app.route('/put', methods=['GET'])
 def putTask():
-	num = request.args.get('num', None)
-	taskpool.random_init(num)
+	num = request.args.get('num', 0)
+	taskpool.random_init(int(num))
 	return 'OK'
 
 @app.route('/update', methods=['GET'])
@@ -64,5 +64,5 @@ def updateTask():
 	return 'OK'
 
 if __name__ == '__main__':
-	taskpool = Taskpool('taskpool')
-	app.run(host=taskpool.hostname, port=FLASK_PORT, threaded=True)
+	taskpool = Taskpool('taskpool:5000')
+	app.run(host='taskpool', port=FLASK_PORT, threaded=True)
