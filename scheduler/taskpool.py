@@ -1,8 +1,7 @@
 from flask import Flask, request
 from common import Task, get_db, FLASK_PORT, Status
 from random import randint
-from threading import Lock
-from pymongo import IndexModel, ASCENDING
+from pymongo import ASCENDING
 
 app = Flask(__name__)
 
@@ -12,31 +11,27 @@ class Taskpool:
 		self.tasks = get_db()[self.host]
 		self.tasks.create_index([('taskid', ASCENDING)])
 		self.tasks.remove() # erase history tasks
-		self.lock = Lock()
 		self.random_init()
 
 	def get(self):
-		with self.lock:
-			entry = self.tasks.find_one({"$or": 
-				[{'status': Status.CREATED},
-				{'status': Status.FAILURE}]
-			}, sort=[('taskid',1)])
+		entry = self.tasks.find_one({"$or": 
+			[{'status': Status.CREATED},
+			{'status': Status.FAILURE}]
+		}, sort=[('taskid',1)])
 		return Task(entry['taskid'], entry['sleep_time']) if entry else None
 
 	def put(self, task):
-		with self.lock:
-			return self.tasks.insert_one({
-				'taskid': task.taskid, 
-				'sleep_time': task.sleep_time,
-				'status': Status.CREATED
-			})
+		return self.tasks.insert_one({
+			'taskid': task.taskid, 
+			'sleep_time': task.sleep_time,
+			'status': Status.CREATED
+		})
 
 	def update(self, taskid, status):
-		with self.lock:
-			self.tasks.find_and_modify(
-				query={'taskid': int(taskid)}, 
-				update={"$set": {'status': status}}
-			)
+		self.tasks.find_and_modify(
+			query={'taskid': int(taskid)}, 
+			update={"$set": {'status': status}}
+		)
 
 	def random_init(self, num=100):
 		# insert tasks with random sleep time

@@ -3,6 +3,8 @@ from http.client import HTTPConnection
 from pymongo import MongoClient
 import time
 import datetime
+from threading import Lock
+from bson.objectid import ObjectId
 
 FLASK_PORT = 5000
 
@@ -55,12 +57,128 @@ DB_PORT = 27017
 def get_db(db_ip=DB_IP, db_port=DB_PORT, db_name=DB_NAME):
 	return MongoClient(db_ip, db_port)[db_name]
 
-class PersistentTable:
-	def __init__(self, collection, db_ip=DB_IP, db_port=DB_PORT, db_name=DB_NAME):
-		self.collection = MongoClient(db_ip, db_port)[db_name].collection
-	
-	def getCollection():
-		return self.collection
+class MongoTable:
+	def __init__(self, table_name, db_ip=DB_IP, db_port=DB_PORT, db_name=DB_NAME):
+		self.dbtable = MongoClient(db_ip, db_port)[db_name][table_name]
+
+	def getTable(self):
+		return self.dbtable
+
+class AtomicCounter:
+	def __init__(self, start=0):
+		self.counter = start
+		self.counter_lock = Lock()
+
+	def next(self):
+		with self.counter_lock:
+			curr = self.counter
+			self.counter = curr + 1 if curr < 1e9 else 0
+		return curr
+
+class SeqTable(AtomicCounter):
+	def __init__(self):
+		AtomicCounter.__init__(self)
+		self.table = {}
+
+	def init_counter(self):
+		self.counter = (0 if not self.table else
+			max([key for key in self.table]) + 1)
+
+	def __setitem__(self, key, value):
+		if key in self.table:
+			self.table[key] = value
+
+	def insert(self, value):
+		key = self.next()
+		self.__setitem__(key, value)
+		return key
+
+class PersistSeqTable(MongoTable):
+	def __init__(self, table_name, db_ip=DB_IP, db_port=DB_PORT, db_name=DB_NAME):
+		self.KEY_FIELD = 'key'
+		self.VALUE_FIELD = 'value'
+		MongoTable.__init__(self, table_name, db_ip, db_port, db_name)
+		self.dbtable.create_index(self.KEY_FIELD)
+		self.cache = SeqTable()
+		self.cache.table = {entry[self.KEY_FIELD]: entry[self.VALUE_FIELD] 
+			for entry in self.dbtable.find(sort=[('_id',1)])}
+		self.cache.init_counter()
+		self.table_lock = Lock()
+
+	def __getitem__(self, key):
+		return self.cache.table.get(key)
+
+	def __setitem__(self, key, value):
+		with self.table_lock:
+			self.cache[key] = value
+			self.dbtable.find_and_modify(
+				query={self.KEY_FIELD: key}, 
+				update={"$set": {self.VALUE_FIELD: value}}
+			)
+
+	def insert(self, value):
+		with self.table_lock:
+			key = self.cache.insert(value)
+			self.dbtable.insert_one({
+				self.KEY_FIELD: key,
+				self.VALUE_FIELD: value
+			})
+		return key
+
+	def __iter__(self):
+		for key in self.cache.table:
+			yield key
+
+class Queue:
+	def insert():
+		raise NotImplementedError
+	def find():
+		raise NotImplementedError
+	def update():
+		raise NotImplementedError
+	def delete():
+		raise NotImplementedError
+
+class InMemQueue(Queue, SeqTable):
+	def __init__(self):
+		SeqTable.__init__(self)
+
+	def find(self, filter=None):
+		for key in self.table:
+			if filter(table[key]):
+				yield table[key]
+
+	def update(self, filter, update):
+		for key in self.table:
+			if filter(self.table[key]):
+				for field, value in update:
+					self.table[key][field] = value
+
+	def delete(self, _id):
+		self.table.pop(_id, None)
+
+class PersistQueue(Queue, MongoTable):
+	def __init__(self, table_name, db_ip=DB_IP, db_port=DB_PORT, db_name=DB_NAME):
+		MongoTable.__init__(self, table_name, db_ip, db_port, db_name)
+
+	def insert(self, document):
+		return self.dbtable.insert_one(document).inserted_id
+
+	def find(self, filter=None):
+		for entry in self.dbtable.find(sort=[('_id',1)]):
+			if filter(entry):
+				yield entry
+
+	def update(self, filter, update):
+		self.dbtable.update_many(filter, {"$set": update})
+
+	def delete(self, _id):
+		self.dbtable.delete_one({'_id': _id})
+
+class QueueFactory:
+	@staticmethod
+	def createQueue(persistent=True, table_name=None, db_ip=DB_IP, db_port=DB_PORT, db_name=DB_NAME):
+		return PersistQueue(table_name, db_ip, db_port, db_name) if persistent else InMemQueue()
 
 class Logger:
 	def __init__(self, fpath):
