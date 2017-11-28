@@ -4,8 +4,10 @@ from pymongo import MongoClient
 import time
 import datetime
 from threading import Lock
-from bson.objectid import ObjectId
 
+#===================================
+# task basics and IPC connection
+#===================================
 FLASK_PORT = 5000
 
 NODE_IS_DOWN = 521
@@ -26,7 +28,7 @@ class Status:
 	FAILURE = 'failure'
 
 class Conn:
-	def __init__(self, host='127.0.0.1' + str(FLASK_PORT), port=None, timeout=10):
+	def __init__(self, host, port=None, timeout=10):
 		self.conn = HTTPConnection(host, port, timeout)
 
 	def send_recv(self, uri, params={}, recv_size=8*128):
@@ -50,6 +52,9 @@ class Conn:
 		except:
 			return NODE_IS_DOWN
 
+#===================================
+# db basics
+#===================================
 DB_NAME = 'matroid'
 DB_IP = '127.0.0.1'
 DB_PORT = 27017
@@ -64,6 +69,95 @@ class MongoTable:
 	def getTable(self):
 		return self.dbtable
 
+#===================================
+# key-value storage container, in-memory and persistent
+#===================================
+class KVTable:
+	def __getitem__(self, key):
+		raise NotImplementedError
+	def __setitem__(self, key, value):
+		raise NotImplementedError
+	def remove(self, key):
+		raise NotImplementedError
+	def __iter__(self):
+		raise NotImplementedError
+	def __contains__(self, key):
+		raise NotImplementedError
+
+class InMemKVTable(KVTable):
+	def __init__(self):
+		self.table = {}
+
+	def __getitem__(self, key):
+		return self.table.get(key)
+
+	def __setitem__(self, key, value):
+		self.table[key] = value
+
+	def remove(self, key):
+		 # return true if key is found
+		return self.table.pop(key, None)
+
+	def __iter__(self):
+		for key in list(self.table):
+			yield key
+
+	def __contains__(self, key):
+		return key in self.table
+
+class PersistKVTable(KVTable, MongoTable):
+	def __init__(self, table_name, db_ip=DB_IP, db_port=DB_PORT, db_name=DB_NAME):
+		self.KEY_FIELD = 'key'
+		self.VALUE_FIELD = 'value'
+		MongoTable.__init__(self, table_name, db_ip, db_port, db_name)
+		self.dbtable.create_index(self.KEY_FIELD)
+		self.init_cache()
+		self.table_lock = Lock()
+
+	def init_cache(self):
+		self.cache = InMemKVTable()
+		self.cache.table = {entry[self.KEY_FIELD]: entry[self.VALUE_FIELD] 
+			for entry in self.dbtable.find(sort=[('_id',1)])}
+
+	def __getitem__(self, key):
+		return self.cache[key]
+
+	def __setitem__(self, key, value):
+		with self.table_lock:
+			self.cache[key] = value
+			self.dbtable.find_and_modify(
+				query={self.KEY_FIELD: key}, 
+				update={"$set": {self.VALUE_FIELD: value}},
+				upsert=True
+			)
+
+	def __iter__(self):
+		for key in self.cache:
+			yield key
+
+	def remove(self, key):
+		with self.table_lock:
+			self.dbtable.delete_one({self.KEY_FIELD: key})
+			return self.cache.remove(key)
+	
+	def __contains__(self, key):
+		return key in self.cache
+
+class KVTableFactory:
+	@staticmethod
+	def createTable(persistent=True, table_name=None, db_ip=DB_IP, db_port=DB_PORT, db_name=DB_NAME):
+		return PersistKVTable(table_name, db_ip, db_port, db_name) if persistent else InMemKVTable()
+
+#===================================
+# key-value container with increasing integer key,
+# in-memory and persistent
+#===================================
+class SeqTable(KVTable):
+	def __setitem__(self, key, value):
+		raise NotImplementedError
+	def insert(self, value):
+		raise NotImplementedError
+
 class AtomicCounter:
 	def __init__(self, start=0):
 		self.counter = start
@@ -75,10 +169,10 @@ class AtomicCounter:
 			self.counter = curr + 1 if curr < 1e9 else 0
 		return curr
 
-class SeqTable(AtomicCounter):
+class InMemSeqTable(SeqTable, InMemKVTable, AtomicCounter):
 	def __init__(self):
-		AtomicCounter.__init__(self)
-		self.table = {}
+		InMemKVTable.__init__(self)
+		AtomicCounter.__init__(self, 0)
 
 	def init_counter(self):
 		self.counter = (0 if not self.table else
@@ -90,23 +184,18 @@ class SeqTable(AtomicCounter):
 
 	def insert(self, value):
 		key = self.next()
-		self.__setitem__(key, value)
+		self.table[key] = value
 		return key
 
-class PersistSeqTable(MongoTable):
+class PersistSeqTable(SeqTable, PersistKVTable):
 	def __init__(self, table_name, db_ip=DB_IP, db_port=DB_PORT, db_name=DB_NAME):
-		self.KEY_FIELD = 'key'
-		self.VALUE_FIELD = 'value'
-		MongoTable.__init__(self, table_name, db_ip, db_port, db_name)
-		self.dbtable.create_index(self.KEY_FIELD)
-		self.cache = SeqTable()
+		PersistKVTable.__init__(self, table_name, db_ip, db_port, db_name)
+
+	def init_cache(self):
+		self.cache = InMemSeqTable()
 		self.cache.table = {entry[self.KEY_FIELD]: entry[self.VALUE_FIELD] 
 			for entry in self.dbtable.find(sort=[('_id',1)])}
 		self.cache.init_counter()
-		self.table_lock = Lock()
-
-	def __getitem__(self, key):
-		return self.cache.table.get(key)
 
 	def __setitem__(self, key, value):
 		with self.table_lock:
@@ -125,10 +214,14 @@ class PersistSeqTable(MongoTable):
 			})
 		return key
 
-	def __iter__(self):
-		for key in self.cache.table:
-			yield key
+class SeqTableFactory:
+	@staticmethod
+	def createTable(persistent=True, table_name=None, db_ip=DB_IP, db_port=DB_PORT, db_name=DB_NAME):
+		return PersistSeqTable(table_name, db_ip, db_port, db_name) if persistent else InMemSeqTable()
 
+#===================================
+# queue container, in-memory and persistent
+#===================================
 class Queue:
 	def insert():
 		raise NotImplementedError
@@ -139,17 +232,17 @@ class Queue:
 	def delete():
 		raise NotImplementedError
 
-class InMemQueue(Queue, SeqTable):
+class InMemQueue(Queue, InMemSeqTable):
 	def __init__(self):
 		SeqTable.__init__(self)
 
 	def find(self, filter=None):
-		for key in self.table:
+		for key in list(self.table):
 			if filter(table[key]):
 				yield table[key]
 
 	def update(self, filter, update):
-		for key in self.table:
+		for key in list(self.table):
 			if filter(self.table[key]):
 				for field, value in update:
 					self.table[key][field] = value
@@ -180,6 +273,9 @@ class QueueFactory:
 	def createQueue(persistent=True, table_name=None, db_ip=DB_IP, db_port=DB_PORT, db_name=DB_NAME):
 		return PersistQueue(table_name, db_ip, db_port, db_name) if persistent else InMemQueue()
 
+#===================================
+# logging
+#===================================
 class Logger:
 	def __init__(self, fpath):
 		self.file = open(fpath, 'a')

@@ -43,7 +43,7 @@ taskpool = None
 @app.route('/get', methods=['GET'])
 def getTask():
 	task = taskpool.get()
-	return str(task) if task else ('', 202) # accepted
+	return str(task) if task else ('Accepted, no more tasks', 202) # accepted
 
 @app.route('/put', methods=['GET'])
 def putTask():
@@ -53,7 +53,7 @@ def putTask():
 
 @app.route('/update', methods=['GET'])
 def updateTask():
-	taskid = request.args.get('taskid', None)
+	taskid = request.args.get('taskid')
 	status = request.args.get('status', Status.FAILURE)
 	taskpool.update(taskid, status)
 	return 'OK'
