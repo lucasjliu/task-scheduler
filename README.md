@@ -13,10 +13,13 @@ Tasks are created and stored in a persistent task pool. A master gets tasks from
 #### Scheduling
 For each task, keep waiting until one of the available workers is picked randomly (simple load balance) to serve it.
 
-#### Fault Tolenrance
-Worker failure is handled in two ways: master send heartbeat message to workers regularly so is able to know the failure; otherwise if the worker is up before next heartbeat, it will notify master itself. Worker can know previous unfinished tasks by always keeping on-going tasks in persistence. For either handling the failed tasks are put back to the task pool.
+#### Scalability
+There are two optional types of worker: short-lived and persistent. A short-lived worker has no persistent storage so will be considered a new one upon each restart; a persistent worker stores running status and recovers from last failure. When a worker is started, it first try to recover (i.e. re-sending pending messages), and then register a unique identifier (UID) from target masters which it will receive tasks from. So a worker can serve multiple masters, and can be registered by simply sending a request to the masters.
 
-For master failure, when master is restarted previous tasks will be either reported by the worker or considered failed if the worker is also down. Here a complicated situation may happen: master is killed, task-0 is done, worker A fails to notify master, and later A is also killed, then master is up and restarts task-0 (master does not wait for A because A could be down forever). After this, if A is up it should send the task-0 success message to master. To distinguish these two task-0, `current_tasks` is maintained in persistence by master in order to accept the on-going task-0 only.
+#### Fault Tolenrance
+There are two possible ways to handle worker failure: master send heartbeat message to workers regularly so is able to know the failure; otherwise if the worker is up before next heartbeat, it will notify master itself. Worker can know previous unfinished tasks by always keeping on-going tasks in persistence, if persistence storage is available. For either handling the failed tasks are put back to the task pool.
+
+For master failure, when master is restarted previous tasks will be either reported by the worker or considered failed if the worker is also down. Here a complicated situation may happen: master is killed, task-0 is done, worker A fails to notify master, and later A is also killed, then master is up and restarts task-0 (master does not wait for A because A could be down forever). After this when A is up, if A is short-lived the task will be just restarted; otherwise A should send the task-0 success message to master. To distinguish these two task-0, `current_tasks` is maintained in persistence by master in order to accept the on-going task-0 only.
 
 #### Architecture
 Data persistence is handled by MongoDB. HTTP is chosen to be the protocol for the communication among nodes, and the interfaces are design in a RESTful manner. A Flask server is set up within each module to serve the HTTP requests. Following is the modules and their interfaces design.
@@ -24,11 +27,15 @@ Data persistence is handled by MongoDB. HTTP is chosen to be the protocol for th
 
 &ensp;&ensp;&ensp;`/get`: to get a task from the list
 
-&ensp;&ensp;&ensp;`/put`: to put back a task if it was failed
+&ensp;&ensp;&ensp;`/put`: to put a task
+
+&ensp;&ensp;&ensp;`/update`: to update status of a task: running, failure, or sucess
 
 * **Master**: for monitoring and tasks assigning.
 
 &ensp;&ensp;&ensp;`/notify`: for worker to notify master a success/failed task
+
+&ensp;&ensp;&ensp;`/register`: get a new worker and assign a UID for it
 
 * **Worker**: nodes that do the tasks.
 
@@ -59,11 +66,11 @@ Nodes are run in docker containers. All following command are peformed in projec
 3. (Optionl) Try ```./tests/echo.py```, no error message should appear
 4. Start the taskpool: ```./scheduler/taskpool.py```
 5. Start the master: ```./scheduler/master.py```
-6. Start the workers with hostname as the parameter:
+6. Start the workers with hostname and port for falsk serving, and a list of master hosts as the parameters:
 ```
-./scheduler/worker.py worker1
-./scheduler/worker.py worker2
-./scheduler/worker.py worker3
+./scheduler/worker.py worker1 5000 master:5000
+./scheduler/worker.py worker2 5000 master:5000
+./scheduler/worker.py worker3 5000 master:5000
 ```
 7. Kill master or workers with Ctrl-C and restart it. The failed tasks should appear in the bottom of the log file.
 
